@@ -31,8 +31,11 @@ function ExcelBtn({ onClick }: { onClick: () => void }) {
 }
 
 export default function VariancePage() {
-  const [ym, setYm] = useState("2026-03");
-  const [scope, setScope] = useState<Scope>("MONTHLY");
+  const [ym, setYm] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [scope, setScope] = useState<Scope>("ANNUAL");
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [firstLoad, setFirstLoad] = useState(true);
@@ -109,24 +112,14 @@ export default function VariancePage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          {scope === "MONTHLY" && (
-            <>
-              <label className="text-sm text-slate-600 whitespace-nowrap">회계월</label>
-              <YearMonthPicker value={ym} onChange={setYm} />
-            </>
-          )}
-          {scope === "ANNUAL" && (
-            <>
-              <label className="text-sm text-slate-600 whitespace-nowrap">회계연도</label>
-              <YearMonthPicker value={ym} onChange={setYm} yearOnly />
-            </>
-          )}
+          <label className="text-sm text-slate-600 whitespace-nowrap">회계연도</label>
+          <YearMonthPicker value={ym} onChange={setYm} yearOnly />
           <ScopeSwitch value={scope} onChange={setScope} />
           {loading && <span className="text-xs text-slate-500 inline-flex items-center gap-2"><Spinner /> 불러오는 중</span>}
         </div>
       </div>
 
-      <Panel title={`예산 vs 실적 · ${scope === "MONTHLY" ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : `${ym.slice(0,4)}년`}`}
+      <Panel title={`예산 vs 실적 · ${ym.slice(0,4)}년`}
         right={<ExcelBtn onClick={dlVariance} />}>
         {loading ? (
           <ChartSkeleton height={320} />

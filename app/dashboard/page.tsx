@@ -21,7 +21,10 @@ const COLORS = ["#1d4ed8", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626"
 
 export default function Dashboard() {
   const router = useRouter();
-  const [ym, setYm] = useState("2026-03");
+  const [ym, setYm] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [byDept, setByDept] = useState<any[]>([]);
   const [byProj, setByProj] = useState<any[]>([]);
   const [byProjMonth, setByProjMonth] = useState<any[]>([]);
@@ -31,7 +34,7 @@ export default function Dashboard() {
   const [variance, setVariance] = useState<any[]>([]);
   const [trend, setTrend] = useState<any[]>([]);
   const [drillLevel, setDrillLevel] = useState<"DEPARTMENT" | "PROJECT" | "EMPLOYEE">("DEPARTMENT");
-  const [scope, setScope] = useState<Scope>("MONTHLY");
+  const [scope, setScope] = useState<Scope>("ANNUAL");
   const [loading, setLoading] = useState(false);
   const [firstLoad, setFirstLoad] = useState(true);
   const [drillPage, setDrillPage] = useState(0);
@@ -144,20 +147,12 @@ export default function Dashboard() {
           <ScopeSwitch value={scope} onChange={setScope} />
         </div>
 
-        {/* center: 회계월 / 회계연도 picker */}
+        {/* center: 회계연도 picker */}
         <div className="md:flex-1 md:flex md:justify-center">
-          {scope === "MONTHLY" && (
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">회계월</label>
-              <YearMonthPicker value={ym} onChange={setYm} />
-            </div>
-          )}
-          {scope === "ANNUAL" && (
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">회계연도</label>
-              <YearMonthPicker value={ym} onChange={setYm} yearOnly />
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-slate-600">회계연도</label>
+            <YearMonthPicker value={ym} onChange={setYm} yearOnly />
+          </div>
         </div>
 
         {/* right: refresh */}
@@ -189,13 +184,13 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
-        <Kpi title={`총 직접원가 (KRW) · ${scope === "MONTHLY" ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : `${ym.slice(0,4)}년`}`}
+        <Kpi title={`총 직접원가 (KRW) · ${ym.slice(0,4)}년`}
              value={fmt(totalCost)}
              loading={loading}
              sub={comparisonTotals
-               ? diffLabel(totalCost, comparisonTotals.cost, scope === "ANNUAL" ? "전년도" : "저번달")
+               ? diffLabel(totalCost, comparisonTotals.cost, "전년도")
                : fmtShort(totalCost)} />
-        <Kpi title={`총 투입공수 (h) · ${scope === "MONTHLY" ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : `${ym.slice(0,4)}년`}`}
+        <Kpi title={`총 투입공수 (h) · ${ym.slice(0,4)}년`}
              value={fmt(totalHours)}
              loading={loading}
              sub={comparisonTotals
@@ -205,13 +200,13 @@ export default function Dashboard() {
              loading={loading}
              sub={comparisonTotals
                ? diffLabel(byProj.length, comparisonTotals.projectCount,
-                           scope === "ANNUAL" ? "전년도" : "저번달", "개")
+                           "전년도", "개")
                : undefined} />
         <Kpi title="인력수 (명)" value={String(byEmp.length)}
              loading={loading}
              sub={comparisonTotals
                ? diffLabel(byEmp.length, comparisonTotals.employeeCount,
-                           scope === "ANNUAL" ? "전년도" : "저번달", "명")
+                           "전년도", "명")
                : "승인된 공수가 있는 직원"} />
         <Kpi title="예산초과 프로젝트" value={String(overBudget)}
              loading={loading}
@@ -220,7 +215,7 @@ export default function Dashboard() {
                : (overBudget > 0 ? "경고: 주의 필요" : "정상 범위")} />
       </div>
 
-      <Panel title={`본부별 직접원가 · ${scope === "MONTHLY" ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : `${ym.slice(0,4)}년`}`}
+      <Panel title={`본부별 직접원가 · ${ym.slice(0,4)}년`}
         right={byDept.length > 0 &&
           <ExportPngButton targetRef={barRef} filename={`bar_${ym}_${scope}.png`} />}>
         <div ref={barRef}>
@@ -249,7 +244,7 @@ export default function Dashboard() {
       </Panel>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Panel title={`프로젝트별 원가 비중 · ${scope === "MONTHLY" ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : `${ym.slice(0,4)}년`}`}
+        <Panel title={`프로젝트별 원가 비중 · ${ym.slice(0,4)}년`}
           right={byProj.length > 0 &&
             <ExportPngButton targetRef={pieRef} filename={`pie_${ym}_${scope}.png`} />}>
           <div ref={pieRef}>
@@ -284,7 +279,7 @@ export default function Dashboard() {
           </div>
         </Panel>
 
-        <Panel title={`예산 대비 차이 추이 · ${scope === "MONTHLY" ? `최근 12개월 (~ ${ym.slice(0,4)}.${Number(ym.slice(5,7))})` : `${ym.slice(0,4)}년 월별`}`}
+        <Panel title={`예산 대비 차이 추이 · ${ym.slice(0,4)}년 월별`}
           right={trend.length > 0 &&
             <ExportPngButton targetRef={trendRef} filename={`variance-trend_${ym}_${scope}.png`} />}>
           <div ref={trendRef}>
@@ -312,9 +307,7 @@ export default function Dashboard() {
             </LineChart>
           </ResponsiveContainer>
           <div className="text-xs text-slate-500 mt-2">
-            * {scope === "MONTHLY"
-                ? "선택한 월 기준 과거 12개월의 월별 실적 vs 분기 Phasing 월예산 (Q1 20% · Q2/Q3 30% · Q4 20%)"
-                : "선택한 연도의 월별 실적 vs 분기 Phasing 월예산 (Q1 20% · Q2/Q3 30% · Q4 20%)"}
+            * 선택한 연도의 월별 실적 vs 분기 Phasing 월예산 (Q1 20% · Q2/Q3 30% · Q4 20%)
           </div>
           </>
           )}
@@ -440,11 +433,8 @@ function diffLabel(current: number, prev: number, who: string, unit = "") {
   return `${sign}${fmt(absDiff)}${unit} (${sign}${pct.toFixed(1)}%) vs ${who}`;
 }
 
-/** Return the previous period for a given ym and scope. */
-function shiftPeriod(ym: string, scope: "MONTHLY" | "ANNUAL"): string {
+/** Return the previous year for a given ym. */
+function shiftPeriod(ym: string, scope: "ANNUAL" | string): string {
   const [y, m] = ym.split("-").map(Number);
-  if (scope === "ANNUAL") return `${y - 1}-${String(m || 1).padStart(2, "0")}`;
-  let py = y, pm = (m || 1) - 1;
-  if (pm < 1) { py -= 1; pm = 12; }
-  return `${py}-${String(pm).padStart(2, "0")}`;
+  return `${y - 1}-${String(m || 1).padStart(2, "0")}`;
 }
