@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { api, downloadXlsx } from "@/lib/api";
 import { fmt, fmtPct, fmtShort } from "@/lib/format";
-import { Panel, Badge, Spinner } from "@/components/ui";
+import { Panel, Badge, Spinner, ChartSkeleton, TableSkeleton } from "@/components/ui";
 import YearMonthPicker from "@/components/YearMonthPicker";
 import ScopeSwitch, { Scope } from "@/components/ScopeSwitch";
 import Pager from "@/components/Pager";
 import SortHeader, { SortState, sortRows } from "@/components/SortHeader";
+import SearchInput from "@/components/SearchInput";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from "recharts";
@@ -34,16 +35,24 @@ export default function VariancePage() {
   const [scope, setScope] = useState<Scope>("MONTHLY");
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [firstLoad, setFirstLoad] = useState(true);
   const [varPage, setVarPage] = useState(0);
   const [facPage, setFacPage] = useState(0);
   const [varSort, setVarSort] = useState<SortState | null>(null);
   const [facSort, setFacSort] = useState<SortState | null>(null);
+  const [varKeyword, setVarKeyword] = useState("");
+  const [facKeyword, setFacKeyword] = useState("");
+
+  function loadData() {
+    setLoading(true);
+    api.variance(ym, scope).then(r => { setRows(r); setLoading(false); setFirstLoad(false); });
+  }
 
   useEffect(() => {
-    setLoading(true);
     setVarPage(0); setFacPage(0);
     setVarSort(null); setFacSort(null);
-    api.variance(ym, scope).then(r => { setRows(r); setLoading(false); });
+    setVarKeyword(""); setFacKeyword("");
+    loadData();
   }, [ym, scope]);
 
   const total = rows.reduce(
@@ -52,13 +61,49 @@ export default function VariancePage() {
       actual: a.actual + Number(r.actualCost || 0),
     }), { budget: 0, actual: 0 });
 
-  const sortedVar = sortRows(rows, varSort);
+  const vkw = varKeyword.toLowerCase();
+  const filteredVar = vkw
+    ? rows.filter((r: any) =>
+        (r.projectCode || "").toLowerCase().includes(vkw) ||
+        (r.projectName || "").toLowerCase().includes(vkw))
+    : rows;
+  const sortedVar = sortRows(filteredVar, varSort);
   const pagedVar = sortedVar.slice(varPage * PAGE_SIZE, (varPage + 1) * PAGE_SIZE);
 
-  const sortedFac = sortRows(rows, facSort);
+  const fkw = facKeyword.toLowerCase();
+  const filteredFac = fkw
+    ? rows.filter((r: any) =>
+        (r.projectCode || "").toLowerCase().includes(fkw) ||
+        (r.projectName || "").toLowerCase().includes(fkw))
+    : rows;
+  const sortedFac = sortRows(filteredFac, facSort);
   const pagedFac = sortedFac.slice(facPage * PAGE_SIZE, (facPage + 1) * PAGE_SIZE);
 
   const dlVariance = () => downloadXlsx(api.exportVarianceUrl(ym, scope), `variance_${ym}_${scope}.xlsx`);
+
+  if (firstLoad) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-32 bg-slate-200 rounded" />
+          <div className="h-8 w-40 bg-slate-200 rounded" />
+          <div className="h-8 w-24 bg-slate-200 rounded" />
+        </div>
+        <div className="rounded-xl bg-white shadow-sm">
+          <div className="px-5 py-3 border-b"><div className="h-4 w-48 bg-slate-200 rounded" /></div>
+          <div className="p-5"><ChartSkeleton height={320} /></div>
+        </div>
+        <div className="rounded-xl bg-white shadow-sm">
+          <div className="px-5 py-3 border-b"><div className="h-4 w-32 bg-slate-200 rounded" /></div>
+          <div className="p-5"><TableSkeleton rows={5} cols={8} /></div>
+        </div>
+        <div className="rounded-xl bg-white shadow-sm">
+          <div className="px-5 py-3 border-b"><div className="h-4 w-56 bg-slate-200 rounded" /></div>
+          <div className="p-5"><TableSkeleton rows={5} cols={7} /></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -83,25 +128,28 @@ export default function VariancePage() {
 
       <Panel title={`예산 vs 실적 · ${scope === "MONTHLY" ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : `${ym.slice(0,4)}년`}`}
         right={<ExcelBtn onClick={dlVariance} />}>
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={rows} margin={{ left: 10, right: 10, top: 10, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="projectCode" tick={{ fontSize: 10 }} angle={-30}
-                   textAnchor="end" height={60} />
-            <YAxis tickFormatter={(v: any) => fmtShort(v)} width={70} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(v: any) => `${fmt(Number(v))} KRW`} />
-            <Legend />
-            <Bar dataKey="budgetCost" name="예산원가" fill="#94a3b8" maxBarSize={28} radius={[3,3,0,0]} />
-            <Bar dataKey="actualCost" name="실적원가" fill="#1d4ed8" maxBarSize={28} radius={[3,3,0,0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {loading ? (
+          <ChartSkeleton height={320} />
+        ) : (
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={rows} margin={{ left: 10, right: 10, top: 10, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="projectCode" tick={{ fontSize: 10 }} angle={-30}
+                     textAnchor="end" height={60} />
+              <YAxis tickFormatter={(v: any) => fmtShort(v)} width={70} tick={{ fontSize: 12 }} />
+              <Tooltip formatter={(v: any) => `${fmt(Number(v))} KRW`} />
+              <Legend />
+              <Bar dataKey="budgetCost" name="예산원가" fill="#94a3b8" maxBarSize={28} radius={[3,3,0,0]} />
+              <Bar dataKey="actualCost" name="실적원가" fill="#1d4ed8" maxBarSize={28} radius={[3,3,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </Panel>
 
       <Panel title="차이분석 표" right={
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500">
-            예산 합계 {fmt(total.budget)} / 실적 합계 {fmt(total.actual)}
-          </span>
+          <SearchInput value={varKeyword} onChange={v => { setVarKeyword(v); setVarPage(0); }}
+            onRefresh={loadData} placeholder="코드, 프로젝트 검색..." className="w-72" />
           <ExcelBtn onClick={dlVariance} />
         </div>
       }>
@@ -121,7 +169,9 @@ export default function VariancePage() {
               </tr>
             </thead>
             <tbody>
-              {pagedVar.map((r: any) => {
+              {loading ? (
+                <tr><td colSpan={9} className="p-0"><TableSkeleton rows={4} cols={8} /></td></tr>
+              ) : pagedVar.length > 0 ? pagedVar.map((r: any) => {
                 const over = Number(r.costVariance) > 0;
                 const way  = Math.abs(Number(r.costVariancePct)) > 10;
                 return (
@@ -143,18 +193,21 @@ export default function VariancePage() {
                     </td>
                   </tr>
                 );
-              })}
-              {rows.length === 0 && (
+              }) : (
                 <tr><td colSpan={9} className="p-6 text-center text-slate-500">데이터가 없습니다.</td></tr>
               )}
             </tbody>
           </table>
         </div>
-        <Pager page={varPage} total={rows.length} pageSize={PAGE_SIZE} onChange={setVarPage} />
+        <Pager page={varPage} total={filteredVar.length} pageSize={PAGE_SIZE} onChange={setVarPage} />
       </Panel>
 
       <Panel title="요인 분석 (가격차이 × 수량차이 분해)" right={
-        <ExcelBtn onClick={dlVariance} />
+        <div className="flex items-center gap-3">
+          <SearchInput value={facKeyword} onChange={v => { setFacKeyword(v); setFacPage(0); }}
+            onRefresh={loadData} placeholder="코드, 프로젝트 검색..." className="w-72" />
+          <ExcelBtn onClick={dlVariance} />
+        </div>
       }>
         <p className="text-xs text-slate-500 mb-3">
           * 가격차이 = (실적단가 − 표준단가) × 실적공수 &nbsp;|&nbsp;
@@ -174,7 +227,9 @@ export default function VariancePage() {
               </tr>
             </thead>
             <tbody>
-              {pagedFac.map((r: any) => {
+              {loading ? (
+                <tr><td colSpan={7} className="p-0"><TableSkeleton rows={4} cols={7} /></td></tr>
+              ) : pagedFac.length > 0 ? pagedFac.map((r: any) => {
                 const sum = Number(r.priceVariance || 0) + Number(r.quantityVariance || 0);
                 return (
                   <tr key={r.projectId} className="border-b">
@@ -191,14 +246,13 @@ export default function VariancePage() {
                     <td className="p-2 text-right text-slate-500">{fmt(sum)}</td>
                   </tr>
                 );
-              })}
-              {rows.length === 0 && (
+              }) : (
                 <tr><td colSpan={7} className="p-6 text-center text-slate-500">데이터가 없습니다.</td></tr>
               )}
             </tbody>
           </table>
         </div>
-        <Pager page={facPage} total={rows.length} pageSize={PAGE_SIZE} onChange={setFacPage} />
+        <Pager page={facPage} total={filteredFac.length} pageSize={PAGE_SIZE} onChange={setFacPage} />
       </Panel>
     </div>
   );

@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { api, uploadXlsx, validateXlsx, downloadXlsx } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, uploadXlsx, validateXlsx, downloadXlsx, PageParams } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import { Panel, Button, Input, Select, Badge, ErrMsg } from "@/components/ui";
+import { Panel, Button, Input, Select, Badge, ErrMsg, TableSkeleton, PageSkeleton } from "@/components/ui";
 import SearchSelect from "@/components/SearchSelect";
+import SearchInput from "@/components/SearchInput";
 import { hasRole } from "@/lib/auth";
 import { collect, required, positive, max, notFuture, Errors } from "@/lib/validate";
 import { toast } from "@/components/Toast";
 import Pager from "@/components/Pager";
 import ImportConfirmModal, { ImportMode } from "@/components/ImportConfirmModal";
-import SortHeader, { SortState, sortRows } from "@/components/SortHeader";
+import SortHeader, { SortState } from "@/components/SortHeader";
+import { useServerTable } from "@/lib/useServerTable";
 
 const STATUS_TONE: Record<string, any> = {
   DRAFT: "slate", SUBMITTED: "yellow", APPROVED: "green", REJECTED: "red",
@@ -20,9 +22,7 @@ const PAGE_SIZE = 20;
 export default function TimesheetPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
-  const [rows, setRows] = useState<any[]>([]);
   const [filter, setFilter] = useState<string>("");
-
   const canApprove = hasRole("MANAGER");
 
   const [form, setForm] = useState({
@@ -34,18 +34,22 @@ export default function TimesheetPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [showFormat, setShowFormat] = useState(false);
-  const [page, setPage] = useState(0);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
-  const [sort, setSort] = useState<SortState | null>(null);
 
-  async function load() {
-    const [e, p, t] = await Promise.all([
-      api.employees(), api.projects(), api.timesheets(filter || undefined),
-    ]);
-    setEmployees(e); setProjects(p); setRows(t); setPage(0);
-  }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
+  // Server-side paginated table
+  const t = useServerTable(
+    (p) => api.timesheets({ ...p, status: filter || undefined }),
+    [filter],
+    { pageSize: PAGE_SIZE, defaultSort: { key: "workDate", dir: "desc" } },
+  );
+
+  // Load dropdown data (not paginated)
+  useEffect(() => {
+    Promise.all([api.employees(), api.projects()])
+      .then(([e, p]) => { setEmployees(e); setProjects(p); })
+      .catch(() => {});
+  }, []);
 
   function validate(): Errors {
     return collect([
@@ -75,7 +79,7 @@ export default function TimesheetPage() {
       });
       toast.success("Draft으로 저장되었습니다.");
       setForm({ ...form, hours: "8", memo: "" });
-      load();
+      t.reload();
     } catch (err) { toast.fromError(err); }
   }
 
@@ -95,7 +99,7 @@ export default function TimesheetPage() {
     }
     setUploading(false);
 
-    if (rows.length > 0) {
+    if (t.total > 0) {
       setPendingFile(file);
       setShowImportConfirm(true);
     } else {
@@ -113,7 +117,7 @@ export default function TimesheetPage() {
       } else {
         toast.success(res.message || "업로드 완료");
       }
-      load();
+      t.reload();
     } catch (err) { toast.fromError(err); }
     finally { setUploading(false); }
   }
@@ -131,11 +135,15 @@ export default function TimesheetPage() {
   }
 
   async function act(fn: () => Promise<any>, ok: string) {
-    try { await fn(); toast.success(ok); load(); }
+    try { await fn(); toast.success(ok); t.reload(); }
     catch (e) { toast.fromError(e); }
   }
 
-  const sorted = sortRows(rows, sort);
+  // Count draft/submitted in current page for bulk buttons
+  const draftCount = t.rows.filter((r: any) => r.status === "DRAFT").length;
+  const submittedCount = t.rows.filter((r: any) => r.status === "SUBMITTED").length;
+
+  if (t.firstLoad) return <PageSkeleton formRows={2} tableRows={8} tableCols={7} />;
 
   return (
     <div className="space-y-6">
@@ -198,6 +206,8 @@ export default function TimesheetPage() {
 
       <Panel title="공수 목록 / 결재" right={
         <div className="flex items-center gap-3">
+          <SearchInput value={t.keyword} onChange={t.setKeyword} onRefresh={t.reload}
+            placeholder="직원, 프로젝트, 메모 검색..." className="w-72" />
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500">상태</span>
             <Select className="w-36" value={filter} onChange={e => setFilter(e.target.value)}>
@@ -225,99 +235,93 @@ export default function TimesheetPage() {
           </button>
         </div>
       }>
-        {(() => {
-          const paged = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-          const draftCount = rows.filter(r => r.status === "DRAFT").length;
-          const submittedCount = rows.filter(r => r.status === "SUBMITTED").length;
-          return (<>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-left">
-                  <tr>
-                    <SortHeader label="상태" sortKey="status" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                    <SortHeader label="근무일" sortKey="workDate" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                    <SortHeader label="직원" sortKey="employee.name" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                    <SortHeader label="프로젝트" sortKey="project.code" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                    <SortHeader label="시간" sortKey="hours" current={sort} onSort={s => { setSort(s); setPage(0); }} className="text-right" />
-                    <SortHeader label="메모" sortKey="memo" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                    <th className="p-2">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paged.map((r: any) => (
-                    <tr key={r.id} className="border-b">
-                      <td className="p-2"><Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge></td>
-                      <td className="p-2">{r.workDate}</td>
-                      <td className="p-2">{r.employee?.name}</td>
-                      <td className="p-2 font-mono">{r.project?.code}</td>
-                      <td className="p-2 text-right">{fmt(r.hours)}</td>
-                      <td className="p-2 text-slate-500">{r.memo || "—"}</td>
-                      <td className="p-2 space-x-1 whitespace-nowrap">
-                        {r.status === "DRAFT" && (
-                          <Button variant="ghost" className="text-xs px-2 py-1"
-                            onClick={() => act(() => api.submitTimesheet(r.id), "제출됨")}>
-                            제출
-                          </Button>
-                        )}
-                        {r.status === "SUBMITTED" && canApprove && (
-                          <>
-                            <Button className="text-xs px-2 py-1"
-                              onClick={() => act(() => api.approveTimesheet(r.id), "승인됨")}>
-                              승인
-                            </Button>
-                            <Button variant="danger" className="text-xs px-2 py-1"
-                              onClick={() => act(() => api.rejectTimesheet(r.id), "반려됨")}>
-                              반려
-                            </Button>
-                          </>
-                        )}
-                        {r.status === "DRAFT" && (
-                          <Button variant="danger" className="text-xs px-2 py-1"
-                            onClick={() => act(() => api.deleteTimesheet(r.id), "삭제됨")}>
-                            삭제
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {rows.length === 0 && (
-                    <tr><td colSpan={7} className="p-6 text-center text-slate-500">데이터가 없습니다.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {(draftCount > 0 || submittedCount > 0) && (
-              <div className="flex items-center gap-2 px-2 pt-3 flex-wrap">
-                {draftCount > 0 && (
-                  <>
-                    <Button variant="ghost"
-                      onClick={() => { if (confirm(`DRAFT ${draftCount}건을 전체 제출하시겠습니까?`)) act(() => api.bulkSubmitTimesheets(), `${draftCount}건 제출됨`); }}>
-                      전체 제출 ({draftCount})
-                    </Button>
-                    <Button variant="danger"
-                      onClick={() => { if (confirm(`DRAFT ${draftCount}건을 전체 삭제하시겠습니까?`)) act(() => api.bulkDeleteDraftTimesheets(), `${draftCount}건 삭제됨`); }}>
-                      전체 삭제 ({draftCount})
-                    </Button>
-                  </>
-                )}
-                {submittedCount > 0 && canApprove && (
-                  <>
-                    {draftCount > 0 && <div className="h-5 w-px bg-slate-200" />}
-                    <Button
-                      onClick={() => { if (confirm(`SUBMITTED ${submittedCount}건을 전체 승인하시겠습니까?`)) act(() => api.bulkApproveTimesheets(), `${submittedCount}건 승인됨`); }}>
-                      전체 승인 ({submittedCount})
-                    </Button>
-                    <Button variant="danger"
-                      onClick={() => { if (confirm(`SUBMITTED ${submittedCount}건을 전체 반려하시겠습니까?`)) act(() => api.bulkRejectTimesheets(), `${submittedCount}건 반려됨`); }}>
-                      전체 반려 ({submittedCount})
-                    </Button>
-                  </>
-                )}
-              </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left">
+              <tr>
+                <SortHeader label="상태" sortKey="status" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="근무일" sortKey="workDate" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="직원" sortKey="employee.name" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="프로젝트" sortKey="project.code" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="시간" sortKey="hours" current={t.sort} onSort={t.setSort} className="text-right" />
+                <SortHeader label="메모" sortKey="memo" current={t.sort} onSort={t.setSort} />
+                <th className="p-2">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.loading ? (
+                <tr><td colSpan={7} className="p-0"><TableSkeleton rows={5} cols={7} /></td></tr>
+              ) : t.rows.length > 0 ? t.rows.map((r: any) => (
+                <tr key={r.id} className="border-b">
+                  <td className="p-2"><Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge></td>
+                  <td className="p-2">{r.workDate}</td>
+                  <td className="p-2">{r.employee?.name}</td>
+                  <td className="p-2 font-mono">{r.project?.code}</td>
+                  <td className="p-2 text-right">{fmt(r.hours)}</td>
+                  <td className="p-2 text-slate-500">{r.memo || "—"}</td>
+                  <td className="p-2 space-x-1 whitespace-nowrap">
+                    {r.status === "DRAFT" && (
+                      <Button variant="ghost" className="text-xs px-2 py-1"
+                        onClick={() => act(() => api.submitTimesheet(r.id), "제출됨")}>
+                        제출
+                      </Button>
+                    )}
+                    {r.status === "SUBMITTED" && canApprove && (
+                      <>
+                        <Button className="text-xs px-2 py-1"
+                          onClick={() => act(() => api.approveTimesheet(r.id), "승인됨")}>
+                          승인
+                        </Button>
+                        <Button variant="danger" className="text-xs px-2 py-1"
+                          onClick={() => act(() => api.rejectTimesheet(r.id), "반려됨")}>
+                          반려
+                        </Button>
+                      </>
+                    )}
+                    {r.status === "DRAFT" && (
+                      <Button variant="danger" className="text-xs px-2 py-1"
+                        onClick={() => act(() => api.deleteTimesheet(r.id), "삭제됨")}>
+                        삭제
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              )) : (
+                <tr><td colSpan={7} className="p-6 text-center text-slate-500">데이터가 없습니다.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {!t.loading && (draftCount > 0 || submittedCount > 0) && (
+          <div className="flex items-center gap-2 px-2 pt-3 flex-wrap">
+            {draftCount > 0 && (
+              <>
+                <Button variant="ghost"
+                  onClick={() => { if (confirm(`DRAFT ${draftCount}건을 전체 제출하시겠습니까?`)) act(() => api.bulkSubmitTimesheets(), "전체 제출됨"); }}>
+                  전체 제출 ({draftCount})
+                </Button>
+                <Button variant="danger"
+                  onClick={() => { if (confirm(`DRAFT ${draftCount}건을 전체 삭제하시겠습니까?`)) act(() => api.bulkDeleteDraftTimesheets(), "전체 삭제됨"); }}>
+                  전체 삭제 ({draftCount})
+                </Button>
+              </>
             )}
-            <Pager page={page} total={rows.length} pageSize={PAGE_SIZE} onChange={setPage} />
-          </>);
-        })()}
+            {submittedCount > 0 && canApprove && (
+              <>
+                {draftCount > 0 && <div className="h-5 w-px bg-slate-200" />}
+                <Button
+                  onClick={() => { if (confirm(`SUBMITTED ${submittedCount}건을 전체 승인하시겠습니까?`)) act(() => api.bulkApproveTimesheets(), "전체 승인됨"); }}>
+                  전체 승인 ({submittedCount})
+                </Button>
+                <Button variant="danger"
+                  onClick={() => { if (confirm(`SUBMITTED ${submittedCount}건을 전체 반려하시겠습니까?`)) act(() => api.bulkRejectTimesheets(), "전체 반려됨"); }}>
+                  전체 반려 ({submittedCount})
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+        <Pager page={t.page} total={t.total} pageSize={PAGE_SIZE} onChange={t.setPage} />
       </Panel>
 
       {showImportConfirm && <ImportConfirmModal
@@ -328,7 +332,6 @@ export default function TimesheetPage() {
         )}
       />}
 
-      {/* Format guide popup */}
       {showFormat && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           onClick={() => setShowFormat(false)}>
@@ -344,7 +347,6 @@ export default function TimesheetPage() {
                 <span className="font-medium text-slate-800">.xlsx</span> 파일의 첫 번째 시트를 읽습니다.
                 1행은 헤더로 건너뛰고, 2행부터 데이터를 등록합니다.
               </p>
-
               <div className="overflow-x-auto border rounded-lg">
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50">
@@ -359,38 +361,23 @@ export default function TimesheetPage() {
                   </thead>
                   <tbody className="font-mono">
                     <tr className="border-t">
-                      <td className="p-2">E0001</td>
-                      <td className="p-2">PRJ-001</td>
-                      <td className="p-2">2026-04-15</td>
-                      <td className="p-2">8</td>
-                      <td className="p-2">경영전략 분석</td>
-                      <td className="p-2">APPROVED</td>
-                    </tr>
-                    <tr className="border-t bg-slate-50/50">
-                      <td className="p-2">E0003</td>
-                      <td className="p-2">PRJ-002</td>
-                      <td className="p-2">2026-04-16</td>
-                      <td className="p-2">6.5</td>
-                      <td className="p-2">문서 정리</td>
-                      <td className="p-2">SUBMITTED</td>
+                      <td className="p-2">E0001</td><td className="p-2">PRJ-001</td>
+                      <td className="p-2">2026-04-15</td><td className="p-2">8</td>
+                      <td className="p-2">경영전략 분석</td><td className="p-2">APPROVED</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-
               <div className="space-y-1.5 text-xs text-slate-500">
                 <p><span className="font-medium text-slate-700">사번</span> — 직원 사번 (예: E0001)</p>
                 <p><span className="font-medium text-slate-700">프로젝트코드</span> — 프로젝트 코드 (예: PRJ-001)</p>
-                <p><span className="font-medium text-slate-700">근무일</span> — 날짜 형식 (yyyy-MM-dd) 또는 Excel 날짜</p>
+                <p><span className="font-medium text-slate-700">근무일</span> — 날짜 형식 (yyyy-MM-dd)</p>
                 <p><span className="font-medium text-slate-700">시간</span> — 투입 시간 (0.5 단위 가능, 최대 24)</p>
                 <p><span className="font-medium text-slate-700">메모</span> — 선택 사항</p>
                 <p><span className="font-medium text-slate-700">Action</span> — DRAFT / SUBMITTED / APPROVED / REJECTED (비워두면 DRAFT)</p>
               </div>
-
               <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
-                최대 <span className="font-semibold">100건</span>까지 업로드 가능합니다.
-                Action 열로 상태를 지정할 수 있으며, 비워두면 <span className="font-semibold">DRAFT</span>로 등록됩니다.
-                기존 데이터가 있으면 <span className="font-semibold">병합</span> 또는 <span className="font-semibold">대체</span>를 선택할 수 있습니다.
+                최대 <span className="font-semibold">1,000건</span>까지 업로드 가능합니다.
               </div>
             </div>
             <div className="px-5 py-3 border-t bg-slate-50 flex justify-end">

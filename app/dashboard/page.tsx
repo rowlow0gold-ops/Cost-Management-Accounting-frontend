@@ -3,7 +3,7 @@
 import { useEffect, useRef as useReactRef, useState } from "react";
 import { api, downloadXlsx } from "@/lib/api";
 import { fmt, fmtPct, fmtShort } from "@/lib/format";
-import { Panel, Kpi, Button, Badge, Spinner } from "@/components/ui";
+import { Panel, Kpi, Button, Badge, Spinner, ChartSkeleton, TableSkeleton } from "@/components/ui";
 import YearMonthPicker from "@/components/YearMonthPicker";
 import ScopeSwitch, { Scope } from "@/components/ScopeSwitch";
 import { useRouter } from "next/navigation";
@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ExportPngButton } from "@/components/ExportPng";
 import Pager from "@/components/Pager";
 import SortHeader, { SortState, sortRows } from "@/components/SortHeader";
+import SearchInput from "@/components/SearchInput";
 
 const COLORS = ["#1d4ed8", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626", "#2563eb", "#a855f7"];
 
@@ -35,8 +36,9 @@ export default function Dashboard() {
   const [firstLoad, setFirstLoad] = useState(true);
   const [drillPage, setDrillPage] = useState(0);
   const [drillSort, setDrillSort] = useState<SortState | null>(null);
+  const [drillKeyword, setDrillKeyword] = useState("");
   const PAGE_SIZE = 10;
-  useEffect(() => { setDrillPage(0); setDrillSort(null); }, [drillLevel, scope, ym]);
+  useEffect(() => { setDrillPage(0); setDrillSort(null); setDrillKeyword(""); }, [drillLevel, scope, ym]);
 
   // refs for PNG export
   const barRef = useReactRef<HTMLDivElement>(null);
@@ -98,19 +100,37 @@ export default function Dashboard() {
   if (firstLoad) {
     return (
       <div className="space-y-6 animate-pulse">
-        <div className="h-10 bg-slate-200 rounded w-80" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-24 bg-slate-200 rounded" />
+          <div className="h-8 w-40 bg-slate-200 rounded" />
+          <div className="flex-1" />
+          <div className="h-8 w-8 bg-slate-200 rounded" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="rounded-xl bg-white p-5 shadow-sm">
               <div className="h-3 w-24 bg-slate-200 rounded mb-3" />
               <div className="h-6 w-32 bg-slate-200 rounded" />
             </div>
           ))}
         </div>
-        <div className="rounded-xl bg-white p-5 shadow-sm h-[340px]" />
+        <div className="rounded-xl bg-white shadow-sm">
+          <div className="px-5 py-3 border-b"><div className="h-4 w-48 bg-slate-200 rounded" /></div>
+          <div className="p-5"><ChartSkeleton height={300} /></div>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="rounded-xl bg-white p-5 shadow-sm h-[360px]" />
-          <div className="rounded-xl bg-white p-5 shadow-sm h-[360px]" />
+          <div className="rounded-xl bg-white shadow-sm">
+            <div className="px-5 py-3 border-b"><div className="h-4 w-40 bg-slate-200 rounded" /></div>
+            <div className="p-5"><ChartSkeleton height={380} /></div>
+          </div>
+          <div className="rounded-xl bg-white shadow-sm">
+            <div className="px-5 py-3 border-b"><div className="h-4 w-52 bg-slate-200 rounded" /></div>
+            <div className="p-5"><ChartSkeleton height={320} /></div>
+          </div>
+        </div>
+        <div className="rounded-xl bg-white shadow-sm">
+          <div className="px-5 py-3 border-b"><div className="h-4 w-28 bg-slate-200 rounded" /></div>
+          <div className="p-5"><TableSkeleton rows={5} cols={4} /></div>
         </div>
       </div>
     );
@@ -171,25 +191,30 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
         <Kpi title={`총 직접원가 (KRW) · ${scope === "MONTHLY" ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : `${ym.slice(0,4)}년`}`}
              value={fmt(totalCost)}
+             loading={loading}
              sub={comparisonTotals
                ? diffLabel(totalCost, comparisonTotals.cost, scope === "ANNUAL" ? "전년도" : "저번달")
                : fmtShort(totalCost)} />
         <Kpi title={`총 투입공수 (h) · ${scope === "MONTHLY" ? `${ym.slice(0,4)}년 ${Number(ym.slice(5,7))}월` : `${ym.slice(0,4)}년`}`}
              value={fmt(totalHours)}
+             loading={loading}
              sub={comparisonTotals
                ? diffLabel(totalHours, comparisonTotals.hours, "이전 기간", "h")
                : undefined} />
         <Kpi title="대상 프로젝트" value={String(byProj.length)}
+             loading={loading}
              sub={comparisonTotals
                ? diffLabel(byProj.length, comparisonTotals.projectCount,
                            scope === "ANNUAL" ? "전년도" : "저번달", "개")
                : undefined} />
         <Kpi title="인력수 (명)" value={String(byEmp.length)}
+             loading={loading}
              sub={comparisonTotals
                ? diffLabel(byEmp.length, comparisonTotals.employeeCount,
                            scope === "ANNUAL" ? "전년도" : "저번달", "명")
                : "승인된 공수가 있는 직원"} />
         <Kpi title="예산초과 프로젝트" value={String(overBudget)}
+             loading={loading}
              sub={comparisonTotals
                ? diffLabel(overBudget, comparisonTotals.overBudget, "이전 기간", "개")
                : (overBudget > 0 ? "경고: 주의 필요" : "정상 범위")} />
@@ -199,10 +224,13 @@ export default function Dashboard() {
         right={byDept.length > 0 &&
           <ExportPngButton targetRef={barRef} filename={`bar_${ym}_${scope}.png`} />}>
         <div ref={barRef}>
-        {byDept.length === 0 ? (
+        {loading ? (
+          <ChartSkeleton height={300} />
+        ) : byDept.length === 0 ? (
           <EmptyState title="본부별 데이터가 없습니다"
                       hint="다른 회계월을 선택하거나 공수를 승인해 보세요." />
         ) : (
+        <>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={byDept} margin={{ left: 10, right: 10, top: 10, bottom: 10 }}
             onClick={(e: any) => { if (e && e.activeLabel) router.push(`/variance`); }}>
@@ -214,8 +242,9 @@ export default function Dashboard() {
                  maxBarSize={60} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+        <div className="text-xs text-slate-500 mt-2">* 막대 클릭 → 차이분석 페이지로 이동</div>
+        </>
         )}
-        {byDept.length > 0 && <div className="text-xs text-slate-500 mt-2">* 막대 클릭 → 차이분석 페이지로 이동</div>}
         </div>
       </Panel>
 
@@ -224,7 +253,9 @@ export default function Dashboard() {
           right={byProj.length > 0 &&
             <ExportPngButton targetRef={pieRef} filename={`pie_${ym}_${scope}.png`} />}>
           <div ref={pieRef}>
-          {byProj.length === 0 ? (
+          {loading ? (
+            <ChartSkeleton height={380} />
+          ) : byProj.length === 0 ? (
             <EmptyState title="프로젝트 데이터가 없습니다"
                         hint="해당 기간에 승인된 공수가 없습니다." />
           ) : (
@@ -257,10 +288,13 @@ export default function Dashboard() {
           right={trend.length > 0 &&
             <ExportPngButton targetRef={trendRef} filename={`variance-trend_${ym}_${scope}.png`} />}>
           <div ref={trendRef}>
-          {trend.length === 0 ? (
+          {loading ? (
+            <ChartSkeleton height={320} />
+          ) : trend.length === 0 ? (
             <EmptyState title="추이 데이터가 없습니다"
                         hint="승인된 공수가 있으면 월별 선이 표시됩니다." />
           ) : (
+          <>
           <ResponsiveContainer width="100%" height={320}>
             <LineChart data={trend} margin={{ left: 10, right: 10, top: 10, bottom: 10 }}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -277,18 +311,21 @@ export default function Dashboard() {
                     name="차이율 %" dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
-          )}
-          {trend.length > 0 && <div className="text-xs text-slate-500 mt-2">
+          <div className="text-xs text-slate-500 mt-2">
             * {scope === "MONTHLY"
                 ? "선택한 월 기준 과거 12개월의 월별 실적 vs 분기 Phasing 월예산 (Q1 20% · Q2/Q3 30% · Q4 20%)"
                 : "선택한 연도의 월별 실적 vs 분기 Phasing 월예산 (Q1 20% · Q2/Q3 30% · Q4 20%)"}
-          </div>}
+          </div>
+          </>
+          )}
           </div>
         </Panel>
       </div>
 
       <Panel title="상세 집계" right={
         <div className="flex items-center gap-3">
+          <SearchInput value={drillKeyword} onChange={v => { setDrillKeyword(v); setDrillPage(0); }}
+            onRefresh={load} placeholder="코드, 이름 검색..." className="w-72" />
           <div className="flex gap-1">
             {(["DEPARTMENT", "PROJECT", "EMPLOYEE"] as const).map(l => (
               <button key={l}
@@ -318,6 +355,9 @@ export default function Dashboard() {
         </div>
       }>
         {(() => {
+          if (loading) {
+            return <TableSkeleton rows={5} cols={4} />;
+          }
           const raw = drillLevel === "DEPARTMENT" ? byDept
             : drillLevel === "PROJECT" ? byProj
             : byEmp;
@@ -325,7 +365,13 @@ export default function Dashboard() {
             return <EmptyState title="데이터가 없습니다"
                                hint="회계 기간을 변경하거나 공수를 승인해 보세요." />;
           }
-          const source = raw.map((r: any) => ({
+          const kw = drillKeyword.toLowerCase();
+          const filtered = kw
+            ? raw.filter((r: any) =>
+                (r.keyCode || "").toLowerCase().includes(kw) ||
+                (r.keyName || "").toLowerCase().includes(kw))
+            : raw;
+          const source = filtered.map((r: any) => ({
             ...r,
             avgRate: Number(r.hours) > 0 ? Number(r.directCost) / Number(r.hours) : 0,
           }));

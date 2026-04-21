@@ -3,9 +3,15 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import { Panel, Button, Input, Select } from "@/components/ui";
+import { Panel, Button, Input, Select, TableSkeleton, PageSkeleton } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import { collect, required, positive, Errors } from "@/lib/validate";
+import Pager from "@/components/Pager";
+import SortHeader from "@/components/SortHeader";
+import SearchInput from "@/components/SearchInput";
+import { useServerTable } from "@/lib/useServerTable";
+
+const PAGE_SIZE = 20;
 
 type Tab = "dept" | "emp" | "proj";
 
@@ -38,11 +44,12 @@ export default function MastersPage() {
 
 /* ---------------- Department ---------------- */
 function DeptTab() {
-  const [rows, setRows] = useState<any[]>([]);
+  const t = useServerTable(
+    (p) => api.departmentsPage(p),
+    [],
+    { pageSize: PAGE_SIZE },
+  );
   const [form, setForm] = useState({ code: "", name: "" });
-
-  async function load() { setRows(await api.departments()); }
-  useEffect(() => { load(); }, []);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -54,15 +61,17 @@ function DeptTab() {
       await api.createDept(form);
       toast.success("본부가 저장되었습니다.");
       setForm({ code: "", name: "" });
-      load();
+      t.reload();
     } catch (e) { toast.fromError(e); }
   }
 
   async function remove(id: number) {
     if (!confirm("삭제할까요?")) return;
-    try { await api.deleteDept(id); toast.success("삭제되었습니다."); load(); }
+    try { await api.deleteDept(id); toast.success("삭제되었습니다."); t.reload(); }
     catch (e) { toast.fromError(e); }
   }
+
+  if (t.firstLoad) return <PageSkeleton formRows={1} tableRows={5} tableCols={4} />;
 
   return (
     <>
@@ -78,24 +87,39 @@ function DeptTab() {
         </form>
       </Panel>
 
-      <Panel title={`본부 목록 (${rows.length})`}>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left">
-            <tr><th className="p-2">ID</th><th className="p-2">코드</th><th className="p-2">이름</th><th className="p-2">Action</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r: any) => (
-              <tr key={r.id} className="border-b">
-                <td className="p-2">{r.id}</td>
-                <td className="p-2 font-mono">{r.code}</td>
-                <td className="p-2">{r.name}</td>
-                <td className="p-2">
-                  <Button variant="danger" onClick={() => remove(r.id)}>삭제</Button>
-                </td>
+      <Panel title={`본부 목록 (${t.total})`} right={
+        <SearchInput value={t.keyword} onChange={t.setKeyword} onRefresh={t.reload}
+          placeholder="코드, 이름 검색..." className="w-72" />
+      }>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left">
+              <tr>
+                <SortHeader label="ID" sortKey="id" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="코드" sortKey="code" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="이름" sortKey="name" current={t.sort} onSort={t.setSort} />
+                <th className="p-2">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {t.loading ? (
+                <tr><td colSpan={4} className="p-0"><TableSkeleton rows={3} cols={4} /></td></tr>
+              ) : t.rows.length > 0 ? t.rows.map((r: any) => (
+                <tr key={r.id} className="border-b">
+                  <td className="p-2">{r.id}</td>
+                  <td className="p-2 font-mono">{r.code}</td>
+                  <td className="p-2">{r.name}</td>
+                  <td className="p-2">
+                    <Button variant="danger" onClick={() => remove(r.id)}>삭제</Button>
+                  </td>
+                </tr>
+              )) : (
+                <tr><td colSpan={4} className="p-6 text-center text-slate-500">등록된 본부가 없습니다.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <Pager page={t.page} total={t.total} pageSize={PAGE_SIZE} onChange={t.setPage} />
       </Panel>
     </>
   );
@@ -103,15 +127,17 @@ function DeptTab() {
 
 /* ---------------- Employee ---------------- */
 function EmpTab() {
-  const [rows, setRows] = useState<any[]>([]);
   const [depts, setDepts] = useState<any[]>([]);
+  const t = useServerTable(
+    (p) => api.employeesPage(p),
+    [],
+    { pageSize: PAGE_SIZE },
+  );
   const [form, setForm] = useState({ empNo: "", name: "", grade: "사원", departmentId: "", hourlyRate: "25000" });
 
-  async function load() {
-    const [e, d] = await Promise.all([api.employees(), api.departments()]);
-    setRows(e); setDepts(d);
-  }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    api.departments().then(setDepts).catch(() => {});
+  }, []);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -135,15 +161,17 @@ function EmpTab() {
       });
       toast.success("직원이 추가되었습니다.");
       setForm({ empNo: "", name: "", grade: "사원", departmentId: "", hourlyRate: "25000" });
-      load();
+      t.reload();
     } catch (e) { toast.fromError(e); }
   }
 
   async function remove(id: number) {
     if (!confirm("삭제할까요?")) return;
-    try { await api.deleteEmp(id); toast.success("삭제되었습니다."); load(); }
+    try { await api.deleteEmp(id); toast.success("삭제되었습니다."); t.reload(); }
     catch (e) { toast.fromError(e); }
   }
+
+  if (t.firstLoad) return <PageSkeleton formRows={2} tableRows={8} tableCols={6} />;
 
   return (
     <>
@@ -170,17 +198,26 @@ function EmpTab() {
         </form>
       </Panel>
 
-      <Panel title={`직원 목록 (${rows.length})`}>
+      <Panel title={`직원 목록 (${t.total})`} right={
+        <SearchInput value={t.keyword} onChange={t.setKeyword} onRefresh={t.reload}
+          placeholder="사번, 이름, 본부 검색..." className="w-72" />
+      }>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left">
               <tr>
-                <th className="p-2">사번</th><th className="p-2">이름</th><th className="p-2">직급</th>
-                <th className="p-2">본부</th><th className="p-2 text-right">단가</th><th className="p-2">Action</th>
+                <SortHeader label="사번" sortKey="empNo" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="이름" sortKey="name" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="직급" sortKey="grade" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="본부" sortKey="department.name" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="단가" sortKey="hourlyRate" current={t.sort} onSort={t.setSort} className="text-right" />
+                <th className="p-2">Action</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r: any) => (
+              {t.loading ? (
+                <tr><td colSpan={6} className="p-0"><TableSkeleton rows={5} cols={6} /></td></tr>
+              ) : t.rows.length > 0 ? t.rows.map((r: any) => (
                 <tr key={r.id} className="border-b">
                   <td className="p-2 font-mono">{r.empNo}</td>
                   <td className="p-2">{r.name}</td>
@@ -189,10 +226,13 @@ function EmpTab() {
                   <td className="p-2 text-right">{fmt(r.hourlyRate)}</td>
                   <td className="p-2"><Button variant="danger" onClick={() => remove(r.id)}>삭제</Button></td>
                 </tr>
-              ))}
+              )) : (
+                <tr><td colSpan={6} className="p-6 text-center text-slate-500">등록된 직원이 없습니다.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
+        <Pager page={t.page} total={t.total} pageSize={PAGE_SIZE} onChange={t.setPage} />
       </Panel>
     </>
   );
@@ -200,15 +240,17 @@ function EmpTab() {
 
 /* ---------------- Project ---------------- */
 function ProjTab() {
-  const [rows, setRows] = useState<any[]>([]);
   const [depts, setDepts] = useState<any[]>([]);
+  const t = useServerTable(
+    (p) => api.projectsPage(p),
+    [],
+    { pageSize: PAGE_SIZE },
+  );
   const [form, setForm] = useState({ code: "", name: "", ownerDepartmentId: "", budgetHours: "1000", budgetCost: "80000000", startDate: "2026-01-01", endDate: "2026-12-31" });
 
-  async function load() {
-    const [p, d] = await Promise.all([api.projects(), api.departments()]);
-    setRows(p); setDepts(d);
-  }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    api.departments().then(setDepts).catch(() => {});
+  }, []);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -238,15 +280,17 @@ function ProjTab() {
       });
       toast.success("프로젝트가 저장되었습니다.");
       setForm({ ...form, code: "", name: "" });
-      load();
+      t.reload();
     } catch (e) { toast.fromError(e); }
   }
 
   async function remove(id: number) {
     if (!confirm("삭제할까요?")) return;
-    try { await api.deleteProj(id); toast.success("삭제되었습니다."); load(); }
+    try { await api.deleteProj(id); toast.success("삭제되었습니다."); t.reload(); }
     catch (e) { toast.fromError(e); }
   }
+
+  if (t.firstLoad) return <PageSkeleton formRows={2} tableRows={8} tableCols={7} />;
 
   return (
     <>
@@ -278,18 +322,27 @@ function ProjTab() {
         </form>
       </Panel>
 
-      <Panel title={`프로젝트 목록 (${rows.length})`}>
+      <Panel title={`프로젝트 목록 (${t.total})`} right={
+        <SearchInput value={t.keyword} onChange={t.setKeyword} onRefresh={t.reload}
+          placeholder="코드, 이름, 본부 검색..." className="w-72" />
+      }>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left">
               <tr>
-                <th className="p-2">코드</th><th className="p-2">이름</th><th className="p-2">본부</th>
-                <th className="p-2 text-right">예산공수</th><th className="p-2 text-right">예산원가</th>
-                <th className="p-2">기간</th><th className="p-2">Action</th>
+                <SortHeader label="코드" sortKey="code" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="이름" sortKey="name" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="본부" sortKey="ownerDepartment.name" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="예산공수" sortKey="budgetHours" current={t.sort} onSort={t.setSort} className="text-right" />
+                <SortHeader label="예산원가" sortKey="budgetCost" current={t.sort} onSort={t.setSort} className="text-right" />
+                <SortHeader label="기간" sortKey="startDate" current={t.sort} onSort={t.setSort} />
+                <th className="p-2">Action</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r: any) => (
+              {t.loading ? (
+                <tr><td colSpan={7} className="p-0"><TableSkeleton rows={5} cols={7} /></td></tr>
+              ) : t.rows.length > 0 ? t.rows.map((r: any) => (
                 <tr key={r.id} className="border-b">
                   <td className="p-2 font-mono">{r.code}</td>
                   <td className="p-2">{r.name}</td>
@@ -299,10 +352,13 @@ function ProjTab() {
                   <td className="p-2 text-slate-500 text-xs">{r.startDate} ~ {r.endDate}</td>
                   <td className="p-2"><Button variant="danger" onClick={() => remove(r.id)}>삭제</Button></td>
                 </tr>
-              ))}
+              )) : (
+                <tr><td colSpan={7} className="p-6 text-center text-slate-500">등록된 프로젝트가 없습니다.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
+        <Pager page={t.page} total={t.total} pageSize={PAGE_SIZE} onChange={t.setPage} />
       </Panel>
     </>
   );

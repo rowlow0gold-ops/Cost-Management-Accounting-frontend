@@ -7,7 +7,39 @@ function getToken(): string | null {
 
 export type ApiError = { message: string; status: number };
 
+/** Spring Page<T> response shape */
+export type PageResponse<T = any> = {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;   // current page (0-based)
+  size: number;
+};
+
+/** Params for paginated + searchable list endpoints */
+export type PageParams = {
+  page?: number;
+  size?: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  keyword?: string;
+};
+
+function qs(params: Record<string, any>): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") {
+      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+    }
+  }
+  return parts.join("&");
+}
+
+const DEV_DELAY = 0; // ← 테스트용 지연 (배포 전 0으로 변경)
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  if (DEV_DELAY > 0) await delay(DEV_DELAY);
   const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
     headers: {
@@ -35,13 +67,23 @@ export const api = {
   register: (body: any) =>
     http<any>("/api/auth/register", { method: "POST", body: JSON.stringify(body) }),
 
-  // Masters
+  // Masters — full list (for dropdowns)
   departments: () => http<any[]>("/api/masters/departments"),
   employees:   () => http<any[]>("/api/masters/employees"),
   projects:    () => http<any[]>("/api/masters/projects"),
   rates:       (ym?: string) =>
     http<any[]>(`/api/masters/rates${ym ? `?yearMonth=${ym}` : ""}`),
   costItems:   (ym: string) => http<any[]>(`/api/masters/cost-items?yearMonth=${ym}`),
+
+  // Masters — paginated (for tables)
+  departmentsPage: (p: PageParams) =>
+    http<PageResponse>(`/api/masters/departments?${qs({ ...p, page: p.page ?? 0 })}`),
+  employeesPage: (p: PageParams) =>
+    http<PageResponse>(`/api/masters/employees?${qs({ ...p, page: p.page ?? 0 })}`),
+  projectsPage: (p: PageParams) =>
+    http<PageResponse>(`/api/masters/projects?${qs({ ...p, page: p.page ?? 0 })}`),
+  costItemsPage: (ym: string, p: PageParams) =>
+    http<PageResponse>(`/api/masters/cost-items?${qs({ yearMonth: ym, ...p, page: p.page ?? 0 })}`),
 
   createDept:  (b: any) => http<any>("/api/masters/departments", { method: "POST", body: JSON.stringify(b) }),
   updateDept:  (id: number, b: any) => http<any>(`/api/masters/departments/${id}`, { method: "PUT", body: JSON.stringify(b) }),
@@ -53,9 +95,9 @@ export const api = {
   updateProj:  (id: number, b: any) => http<any>(`/api/masters/projects/${id}`, { method: "PUT", body: JSON.stringify(b) }),
   deleteProj:  (id: number) => http<any>(`/api/masters/projects/${id}`, { method: "DELETE" }),
 
-  // Timesheet
-  timesheets: (status?: string) =>
-    http<any[]>(`/api/timesheets${status ? `?status=${status}` : ""}`),
+  // Timesheet — paginated
+  timesheets: (p: PageParams & { status?: string }) =>
+    http<PageResponse>(`/api/timesheets?${qs({ ...p, page: p.page ?? 0 })}`),
   createTimesheet: (b: any) => http<any>("/api/timesheets", { method: "POST", body: JSON.stringify(b) }),
   submitTimesheet: (id: number) => http<any>(`/api/timesheets/${id}/submit`, { method: "POST" }),
   approveTimesheet: (id: number) => http<any>(`/api/timesheets/${id}/approve`, { method: "POST" }),
@@ -76,11 +118,19 @@ export const api = {
     http<any[]>(`/api/cost/variance-timeseries?yearMonth=${ym}&scope=${scope}`),
   allocate:  (ym: string, basis: "HOURS" | "HEADCOUNT" | "REVENUE") =>
     http<any[]>("/api/cost/allocate", { method: "POST", body: JSON.stringify({ yearMonth: ym, basis }) }),
-  transfers: (ym: string) => http<any[]>(`/api/cost/transfers?yearMonth=${ym}`),
+
+  // Allocations — paginated
+  allocationsPage: (ym: string, p: PageParams) =>
+    http<PageResponse>(`/api/cost/allocations?${qs({ yearMonth: ym, ...p, page: p.page ?? 0 })}`),
+
+  // Transfers — paginated
+  transfersPage: (ym: string, p: PageParams) =>
+    http<PageResponse>(`/api/cost/transfers?${qs({ yearMonth: ym, ...p, page: p.page ?? 0 })}`),
   transfer:  (b: any) => http<any>("/api/cost/transfer", { method: "POST", body: JSON.stringify(b) }),
 
-  // Audit
-  auditRecent: () => http<any[]>("/api/admin/audit"),
+  // Audit — paginated
+  auditPage: (p: PageParams) =>
+    http<PageResponse>(`/api/admin/audit?${qs({ ...p, page: p.page ?? 0 })}`),
 
   // Export helpers (returns URL with token as query — use direct download)
   exportAggregateUrl: (ym: string, level: string, scope: "MONTHLY" | "ANNUAL" = "MONTHLY") =>

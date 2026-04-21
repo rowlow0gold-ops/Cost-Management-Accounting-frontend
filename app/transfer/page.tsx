@@ -3,22 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { api, uploadXlsx, validateXlsx, downloadXlsx } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import { Panel, Button, Input, Select, Badge, ErrMsg } from "@/components/ui";
+import { Panel, Button, Input, Select, Badge, ErrMsg, TableSkeleton, PageSkeleton } from "@/components/ui";
 import { collect, required, positive, differs, Errors } from "@/lib/validate";
 import { toast } from "@/components/Toast";
 import Pager from "@/components/Pager";
-import SortHeader, { SortState, sortRows } from "@/components/SortHeader";
+import SortHeader from "@/components/SortHeader";
+import SearchInput from "@/components/SearchInput";
 import YearMonthPicker from "@/components/YearMonthPicker";
 import ImportConfirmModal, { ImportMode } from "@/components/ImportConfirmModal";
+import { useServerTable } from "@/lib/useServerTable";
 
 const PAGE_SIZE = 20;
 
 export default function TransferPage() {
   const [depts, setDepts] = useState<any[]>([]);
-  const [rows, setRows] = useState<any[]>([]);
   const [errors, setErrors] = useState<Errors>({});
-  const [page, setPage] = useState(0);
-  const [sort, setSort] = useState<SortState | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showFormat, setShowFormat] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -33,17 +32,15 @@ export default function TransferPage() {
     memo: "",
   });
 
-  async function load() {
-    const [d, t] = await Promise.all([
-      api.departments(),
-      api.transfers(form.yearMonth),
-    ]);
-    setDepts(d);
-    setRows(t);
-    setPage(0);
-  }
+  const t = useServerTable(
+    (p) => api.transfersPage(form.yearMonth, p),
+    [form.yearMonth],
+    { pageSize: PAGE_SIZE },
+  );
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [form.yearMonth]);
+  useEffect(() => {
+    api.departments().then(setDepts).catch(() => {});
+  }, []);
 
   function validate(): Errors {
     return collect([
@@ -76,7 +73,7 @@ export default function TransferPage() {
       });
       toast.success("내부대체 기록 완료");
       setForm({ ...form, hours: "0", memo: "" });
-      load();
+      t.reload();
     } catch (e) { toast.fromError(e); }
   }
 
@@ -84,24 +81,14 @@ export default function TransferPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (fileRef.current) fileRef.current.value = "";
-
     setUploading(true);
     try {
       const res = await validateXlsx("/api/cost/transfers/validate", file);
       toast.success(`${res.valid}건 검증 완료`);
-    } catch (err) {
-      toast.fromError(err);
-      setUploading(false);
-      return;
-    }
+    } catch (err) { toast.fromError(err); setUploading(false); return; }
     setUploading(false);
-
-    if (rows.length > 0) {
-      setPendingFile(file);
-      setShowImportConfirm(true);
-    } else {
-      doImport(file);
-    }
+    if (t.total > 0) { setPendingFile(file); setShowImportConfirm(true); }
+    else doImport(file);
   }
 
   async function doImport(file: File, mode?: "MERGE" | "REPLACE") {
@@ -109,7 +96,7 @@ export default function TransferPage() {
     try {
       const res = await uploadXlsx("/api/cost/transfers/import", file, mode);
       toast.success(res.message || "업로드 완료");
-      load();
+      t.reload();
     } catch (err) { toast.fromError(err); }
     finally { setUploading(false); }
   }
@@ -117,18 +104,14 @@ export default function TransferPage() {
   function handleImportConfirm(mode: ImportMode) {
     setShowImportConfirm(false);
     if (mode && pendingFile) {
-      if (mode === "REPLACE_SUBMIT") {
-        doImport(pendingFile, "REPLACE");
-      } else {
-        doImport(pendingFile, mode);
-      }
+      doImport(pendingFile, mode === "REPLACE_SUBMIT" ? "REPLACE" : mode);
     }
     setPendingFile(null);
   }
 
   const amount = Number(form.hours || 0) * Number(form.hourlyRate || 0);
-  const sorted = sortRows(rows, sort);
-  const paged = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  if (t.firstLoad) return <PageSkeleton formRows={2} tableRows={6} tableCols={6} />;
 
   return (
     <div className="space-y-6">
@@ -179,8 +162,7 @@ export default function TransferPage() {
               onClick={() => fileRef.current?.click()}>
               {uploading ? "업로드 중..." : "Excel 일괄 등록"}
             </Button>
-            <button type="button"
-              onClick={() => setShowFormat(true)}
+            <button type="button" onClick={() => setShowFormat(true)}
               className="text-xs text-blue-500 hover:text-blue-700 underline underline-offset-2">
               양식 안내
             </button>
@@ -189,37 +171,43 @@ export default function TransferPage() {
       </Panel>
 
       <Panel title="내부대체 내역" right={
-        rows.length > 0 ? (
-          <button type="button"
-            onClick={() => downloadXlsx(
-              api.exportTransfersUrl(form.yearMonth),
-              `transfers_${form.yearMonth}.xlsx`
-            )}
-            className="text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            다운로드
-          </button>
-        ) : null
+        <div className="flex items-center gap-3">
+          <SearchInput value={t.keyword} onChange={t.setKeyword} onRefresh={t.reload}
+            placeholder="본부, 메모 검색..." className="w-72" />
+          {t.total > 0 && (
+            <button type="button"
+              onClick={() => downloadXlsx(
+                api.exportTransfersUrl(form.yearMonth),
+                `transfers_${form.yearMonth}.xlsx`
+              )}
+              className="text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              다운로드
+            </button>
+          )}
+        </div>
       }>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left">
               <tr>
-                <SortHeader label="회계월" sortKey="yearMonth" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                <SortHeader label="제공 본부" sortKey="sourceDepartment.name" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                <SortHeader label="수혜 본부" sortKey="targetDepartment.name" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                <SortHeader label="배부기준" sortKey="basis" current={sort} onSort={s => { setSort(s); setPage(0); }} />
-                <SortHeader label="대체가액" sortKey="amount" current={sort} onSort={s => { setSort(s); setPage(0); }} className="text-right" />
-                <SortHeader label="메모" sortKey="memo" current={sort} onSort={s => { setSort(s); setPage(0); }} />
+                <SortHeader label="회계월" sortKey="yearMonth" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="제공 본부" sortKey="sourceDepartment.name" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="수혜 본부" sortKey="targetDepartment.name" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="배부기준" sortKey="basis" current={t.sort} onSort={t.setSort} />
+                <SortHeader label="대체가액" sortKey="amount" current={t.sort} onSort={t.setSort} className="text-right" />
+                <SortHeader label="메모" sortKey="memo" current={t.sort} onSort={t.setSort} />
               </tr>
             </thead>
             <tbody>
-              {paged.map((r: any) => (
+              {t.loading ? (
+                <tr><td colSpan={6} className="p-0"><TableSkeleton rows={4} cols={6} /></td></tr>
+              ) : t.rows.length > 0 ? t.rows.map((r: any) => (
                 <tr key={r.id} className="border-b">
                   <td className="p-2">{r.yearMonth}</td>
                   <td className="p-2">{r.sourceDepartment?.name}</td>
@@ -228,14 +216,13 @@ export default function TransferPage() {
                   <td className="p-2 text-right font-mono">{fmt(r.amount)}</td>
                   <td className="p-2 text-slate-500">{r.memo || "—"}</td>
                 </tr>
-              ))}
-              {rows.length === 0 && (
+              )) : (
                 <tr><td colSpan={6} className="p-6 text-center text-slate-500">해당 월의 내부대체 내역이 없습니다.</td></tr>
               )}
             </tbody>
           </table>
         </div>
-        <Pager page={page} total={rows.length} pageSize={PAGE_SIZE} onChange={setPage} />
+        <Pager page={t.page} total={t.total} pageSize={PAGE_SIZE} onChange={t.setPage} />
       </Panel>
 
       {showImportConfirm && <ImportConfirmModal
@@ -275,35 +262,21 @@ export default function TransferPage() {
                   </thead>
                   <tbody className="font-mono">
                     <tr className="border-t">
-                      <td className="p-2">2026-04</td>
-                      <td className="p-2">HQ3</td>
-                      <td className="p-2">HQ4</td>
-                      <td className="p-2">40</td>
-                      <td className="p-2">70000</td>
-                      <td className="p-2">IT 개발지원</td>
-                    </tr>
-                    <tr className="border-t bg-slate-50/50">
-                      <td className="p-2">2026-04</td>
-                      <td className="p-2">HQ1</td>
-                      <td className="p-2">HQ5</td>
-                      <td className="p-2">20</td>
-                      <td className="p-2">65000</td>
-                      <td className="p-2">경영기획 자문</td>
+                      <td className="p-2">2026-04</td><td className="p-2">HQ3</td><td className="p-2">HQ4</td>
+                      <td className="p-2">40</td><td className="p-2">70000</td><td className="p-2">IT 개발지원</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
               <div className="space-y-1.5 text-xs text-slate-500">
-                <p><span className="font-medium text-slate-700">회계월</span> — yyyy-MM 형식 (예: 2026-04)</p>
-                <p><span className="font-medium text-slate-700">제공본부코드</span> — 서비스를 제공하는 본부 코드 (예: HQ3)</p>
-                <p><span className="font-medium text-slate-700">수혜본부코드</span> — 서비스를 받는 본부 코드 (예: HQ4)</p>
-                <p><span className="font-medium text-slate-700">공수</span> — 투입 공수 (0보다 큰 숫자)</p>
-                <p><span className="font-medium text-slate-700">시간당단가</span> — 시간당 단가 KRW (0보다 큰 숫자)</p>
+                <p><span className="font-medium text-slate-700">회계월</span> — yyyy-MM 형식</p>
+                <p><span className="font-medium text-slate-700">제공/수혜본부코드</span> — 등록된 본부 코드</p>
+                <p><span className="font-medium text-slate-700">공수</span> — 0보다 큰 숫자</p>
+                <p><span className="font-medium text-slate-700">시간당단가</span> — KRW (0보다 큰 숫자)</p>
                 <p><span className="font-medium text-slate-700">메모</span> — 선택 사항</p>
               </div>
               <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
                 최대 <span className="font-semibold">200건</span>까지 업로드 가능합니다.
-                대체가액은 공수 × 시간당단가로 자동 계산됩니다.
               </div>
             </div>
             <div className="px-5 py-3 border-t bg-slate-50 flex justify-end">
