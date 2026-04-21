@@ -15,7 +15,7 @@ import { useServerTable } from "@/lib/useServerTable";
 const PAGE_SIZE = 20;
 
 export default function AllocationPage() {
-  const [ym, setYm] = useState("2026-01");
+  const [ym, setYm] = useState("2026-03");
   const [basis, setBasis] = useState<"HOURS" | "HEADCOUNT" | "REVENUE">("HOURS");
   const [result, setResult] = useState<any[]>([]);
   const [running, setRunning] = useState(false);

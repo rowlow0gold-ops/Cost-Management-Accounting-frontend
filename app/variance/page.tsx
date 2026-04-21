@@ -31,7 +31,7 @@ function ExcelBtn({ onClick }: { onClick: () => void }) {
 }
 
 export default function VariancePage() {
-  const [ym, setYm] = useState("2026-01");
+  const [ym, setYm] = useState("2026-03");
   const [scope, setScope] = useState<Scope>("MONTHLY");
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

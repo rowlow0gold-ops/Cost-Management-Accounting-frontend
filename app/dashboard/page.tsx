@@ -21,7 +21,7 @@ const COLORS = ["#1d4ed8", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626"
 
 export default function Dashboard() {
   const router = useRouter();
-  const [ym, setYm] = useState("2026-01");
+  const [ym, setYm] = useState("2026-03");
   const [byDept, setByDept] = useState<any[]>([]);
   const [byProj, setByProj] = useState<any[]>([]);
   const [byProjMonth, setByProjMonth] = useState<any[]>([]);
