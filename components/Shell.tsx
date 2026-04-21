@@ -59,7 +59,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <div className="px-5 py-5 border-b border-slate-800 flex items-center justify-between">
           <div>
             <div className="text-xs text-slate-400">Cost & Management</div>
-            <div className="font-bold text-sm">원가/관리회계</div>
+            <div className="font-bold text-sm flex items-center gap-1.5">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-brand-600 text-white text-xs font-bold">$</span>
+              원가/관리회계
+            </div>
           </div>
           <button
             className="md:hidden text-slate-400 hover:text-white"
