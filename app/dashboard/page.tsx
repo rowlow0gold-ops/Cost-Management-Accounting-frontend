@@ -13,6 +13,8 @@ import {
 } from "recharts";
 import { EmptyState } from "@/components/EmptyState";
 import { ExportPngButton } from "@/components/ExportPng";
+import Pager from "@/components/Pager";
+import SortHeader, { SortState, sortRows } from "@/components/SortHeader";
 
 const COLORS = ["#1d4ed8", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626", "#2563eb", "#a855f7"];
 
@@ -32,8 +34,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [firstLoad, setFirstLoad] = useState(true);
   const [drillPage, setDrillPage] = useState(0);
+  const [drillSort, setDrillSort] = useState<SortState | null>(null);
   const PAGE_SIZE = 10;
-  useEffect(() => { setDrillPage(0); }, [drillLevel, scope, ym]);
+  useEffect(() => { setDrillPage(0); setDrillSort(null); }, [drillLevel, scope, ym]);
 
   // refs for PNG export
   const barRef = useReactRef<HTMLDivElement>(null);
@@ -137,14 +140,8 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* right: Excel + refresh */}
+        {/* right: refresh */}
         <div className="flex items-center gap-2 md:ml-auto">
-          <Button variant="ghost"
-            onClick={() => downloadXlsx(
-              api.exportAggregateAllUrl(ym, scope),
-              `aggregate_${ym}_${scope}.xlsx`)}>
-            Excel 다운로드
-          </Button>
           <button
             onClick={load}
             disabled={loading}
@@ -290,47 +287,68 @@ export default function Dashboard() {
         </Panel>
       </div>
 
-      <Panel title="드릴다운 집계" right={
-        <div className="flex gap-1">
-          {(["DEPARTMENT", "PROJECT", "EMPLOYEE"] as const).map(l => (
-            <button key={l}
-              onClick={() => setDrillLevel(l)}
-              className={`px-3 py-1 rounded text-xs ${drillLevel === l
-                ? "bg-brand-600 text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
-              {l === "DEPARTMENT" ? "본부" : l === "PROJECT" ? "프로젝트" : "직원"}
-            </button>
-          ))}
+      <Panel title="상세 집계" right={
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1">
+            {(["DEPARTMENT", "PROJECT", "EMPLOYEE"] as const).map(l => (
+              <button key={l}
+                onClick={() => setDrillLevel(l)}
+                className={`px-3 py-1 rounded text-xs ${drillLevel === l
+                  ? "bg-brand-600 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                {l === "DEPARTMENT" ? "본부" : l === "PROJECT" ? "프로젝트" : "직원"}
+              </button>
+            ))}
+          </div>
+          <div className="h-5 w-px bg-slate-200" />
+          <button type="button"
+            onClick={() => downloadXlsx(
+              api.exportAggregateAllUrl(ym, scope),
+              `aggregate_${ym}_${scope}.xlsx`
+            )}
+            className="text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            다운로드
+          </button>
         </div>
       }>
         {(() => {
-          const source = drillLevel === "DEPARTMENT" ? byDept
+          const raw = drillLevel === "DEPARTMENT" ? byDept
             : drillLevel === "PROJECT" ? byProj
             : byEmp;
-          if (source.length === 0) {
+          if (raw.length === 0) {
             return <EmptyState title="데이터가 없습니다"
                                hint="회계 기간을 변경하거나 공수를 승인해 보세요." />;
           }
-          const totalPages = Math.max(1, Math.ceil(source.length / PAGE_SIZE));
+          const source = raw.map((r: any) => ({
+            ...r,
+            avgRate: Number(r.hours) > 0 ? Number(r.directCost) / Number(r.hours) : 0,
+          }));
+          const sorted = sortRows(source, drillSort);
+          const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
           const page = Math.min(drillPage, totalPages - 1);
-          const pageRows = source.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+          const pageRows = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
           return (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-left">
                     <tr>
-                      <th className="p-2">코드</th>
-                      <th className="p-2">{drillLevel === "EMPLOYEE" ? "직원명" : "이름"}</th>
-                      <th className="p-2 text-right">공수(h)</th>
-                      <th className="p-2 text-right">직접원가</th>
-                      {drillLevel === "EMPLOYEE" && <th className="p-2 text-right">시간당 단가</th>}
+                      <SortHeader label="코드" sortKey="keyCode" current={drillSort} onSort={s => { setDrillSort(s); setDrillPage(0); }} />
+                      <SortHeader label={drillLevel === "EMPLOYEE" ? "직원명" : "이름"} sortKey="keyName" current={drillSort} onSort={s => { setDrillSort(s); setDrillPage(0); }} />
+                      <SortHeader label="공수(h)" sortKey="hours" current={drillSort} onSort={s => { setDrillSort(s); setDrillPage(0); }} className="text-right" />
+                      <SortHeader label="직접원가" sortKey="directCost" current={drillSort} onSort={s => { setDrillSort(s); setDrillPage(0); }} className="text-right" />
+                      {drillLevel === "EMPLOYEE" && <SortHeader label="시간당 단가" sortKey="avgRate" current={drillSort} onSort={s => { setDrillSort(s); setDrillPage(0); }} className="text-right" />}
                     </tr>
                   </thead>
                   <tbody>
                     {pageRows.map((r: any) => {
-                      const avgRate = Number(r.hours) > 0
-                        ? Number(r.directCost) / Number(r.hours) : 0;
+                      const avgRate = r.avgRate;
                       const proj = drillLevel === "PROJECT" ? projectsById[r.keyId] : null;
                       const projMeta = proj
                         ? `${r.keyCode} · ${r.keyName}\n기간: ${proj.startDate} ~ ${proj.endDate}`
@@ -352,19 +370,7 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
-              {source.length > PAGE_SIZE && (
-                <div className="flex items-center justify-between mt-3 text-xs text-slate-600">
-                  <span>총 {source.length}건 · {page + 1} / {totalPages} 페이지</span>
-                  <div className="flex gap-1">
-                    <button disabled={page === 0}
-                      onClick={() => setDrillPage(Math.max(0, page - 1))}
-                      className="px-2 py-1 border rounded bg-white disabled:opacity-40 hover:bg-slate-50">‹ 이전</button>
-                    <button disabled={page >= totalPages - 1}
-                      onClick={() => setDrillPage(Math.min(totalPages - 1, page + 1))}
-                      className="px-2 py-1 border rounded bg-white disabled:opacity-40 hover:bg-slate-50">다음 ›</button>
-                  </div>
-                </div>
-              )}
+              <Pager page={page} total={source.length} pageSize={PAGE_SIZE} onChange={setDrillPage} />
             </>
           );
         })()}

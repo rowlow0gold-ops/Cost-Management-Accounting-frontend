@@ -61,6 +61,10 @@ export const api = {
   approveTimesheet: (id: number) => http<any>(`/api/timesheets/${id}/approve`, { method: "POST" }),
   rejectTimesheet:  (id: number) => http<any>(`/api/timesheets/${id}/reject`,  { method: "POST" }),
   deleteTimesheet:  (id: number) => http<any>(`/api/timesheets/${id}`, { method: "DELETE" }),
+  bulkSubmitTimesheets:  () => http<any>("/api/timesheets/bulk/submit",  { method: "POST" }),
+  bulkApproveTimesheets: () => http<any>("/api/timesheets/bulk/approve", { method: "POST" }),
+  bulkRejectTimesheets:  () => http<any>("/api/timesheets/bulk/reject",  { method: "POST" }),
+  bulkDeleteDraftTimesheets: () => http<any>("/api/timesheets/bulk/draft", { method: "DELETE" }),
 
   // Cost
   aggregate: (ym: string, level = "PROJECT", scope: "MONTHLY" | "ANNUAL" = "MONTHLY",
@@ -72,6 +76,7 @@ export const api = {
     http<any[]>(`/api/cost/variance-timeseries?yearMonth=${ym}&scope=${scope}`),
   allocate:  (ym: string, basis: "HOURS" | "HEADCOUNT" | "REVENUE") =>
     http<any[]>("/api/cost/allocate", { method: "POST", body: JSON.stringify({ yearMonth: ym, basis }) }),
+  transfers: (ym: string) => http<any[]>(`/api/cost/transfers?yearMonth=${ym}`),
   transfer:  (b: any) => http<any>("/api/cost/transfer", { method: "POST", body: JSON.stringify(b) }),
 
   // Audit
@@ -82,9 +87,51 @@ export const api = {
     `${BASE}/api/export/aggregate.xlsx?yearMonth=${ym}&level=${level}&scope=${scope}`,
   exportAggregateAllUrl: (ym: string, scope: "MONTHLY" | "ANNUAL" = "MONTHLY") =>
     `${BASE}/api/export/aggregate-all.xlsx?yearMonth=${ym}&scope=${scope}`,
+  exportTimesheetsUrl: (status?: string) =>
+    `${BASE}/api/export/timesheets.xlsx${status ? `?status=${status}` : ""}`,
+  exportTransfersUrl: (ym?: string) =>
+    `${BASE}/api/export/transfers.xlsx${ym ? `?yearMonth=${ym}` : ""}`,
+  exportCostItemsUrl: (ym?: string) =>
+    `${BASE}/api/export/cost-items.xlsx${ym ? `?yearMonth=${ym}` : ""}`,
+  exportAllocationsUrl: (ym: string) =>
+    `${BASE}/api/export/allocations.xlsx?yearMonth=${ym}`,
   exportVarianceUrl: (ym: string, scope: "MONTHLY" | "ANNUAL" = "MONTHLY") =>
     `${BASE}/api/export/variance.xlsx?yearMonth=${ym}&scope=${scope}`,
+  exportAuditUrl: () => `${BASE}/api/export/audit.xlsx`,
 };
+
+/** Validate an Excel file without importing. Returns { valid: number } or throws. */
+export async function validateXlsx(path: string, file: File): Promise<any> {
+  const token = getToken();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  let json: any;
+  try { json = await res.json(); } catch { json = {}; }
+  if (!res.ok) throw { message: json.message || `검증 실패 (${res.status})`, status: res.status };
+  return json;
+}
+
+/** Upload an Excel file to the given path. Returns the parsed JSON response. */
+export async function uploadXlsx(path: string, file: File, mode?: "MERGE" | "REPLACE"): Promise<any> {
+  const token = getToken();
+  const form = new FormData();
+  form.append("file", file);
+  const url = mode ? `${BASE}${path}?mode=${mode}` : `${BASE}${path}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  let json: any;
+  try { json = await res.json(); } catch { json = {}; }
+  if (!res.ok) throw { message: json.message || `업로드 실패 (${res.status})`, status: res.status };
+  return json;
+}
 
 /** For file download endpoints that need auth header. */
 export async function downloadXlsx(url: string, filename: string) {
