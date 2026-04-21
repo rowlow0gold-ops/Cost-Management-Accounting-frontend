@@ -52,6 +52,8 @@ export default function Dashboard() {
     projectCount: number; employeeCount: number;
   } | null>(null);
 
+  const [drillLoading, setDrillLoading] = useState(false);
+
   async function load() {
     setLoading(true);
     try {
@@ -66,6 +68,18 @@ export default function Dashboard() {
       setByDept(d); setByProj(p); setByEmp(e); setByCompany(c);
       setVariance(v); setTrend(ts);
     } finally { setLoading(false); setFirstLoad(false); }
+  }
+
+  async function refreshDrill() {
+    setDrillLoading(true);
+    try {
+      const [d, p, e] = await Promise.all([
+        api.aggregate(ym, "DEPARTMENT", scope),
+        api.aggregate(ym, "PROJECT", scope),
+        api.aggregate(ym, "EMPLOYEE", scope),
+      ]);
+      setByDept(d); setByProj(p); setByEmp(e);
+    } finally { setDrillLoading(false); }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [ym, scope]);
 
@@ -326,7 +340,7 @@ export default function Dashboard() {
       <Panel title="상세 집계" right={
         <div className="flex items-center gap-3">
           <SearchInput value={drillKeyword} onChange={v => { setDrillKeyword(v); setDrillPage(0); }}
-            onRefresh={load} placeholder="코드, 이름 검색..." className="w-72" />
+            onRefresh={refreshDrill} placeholder="코드, 이름 검색..." className="w-72" />
           <div className="flex gap-1">
             {(["DEPARTMENT", "PROJECT", "EMPLOYEE"] as const).map(l => (
               <button key={l}
@@ -356,7 +370,7 @@ export default function Dashboard() {
         </div>
       }>
         {(() => {
-          if (loading) {
+          if (loading || drillLoading) {
             return <TableSkeleton rows={5} cols={4} />;
           }
           const raw = drillLevel === "DEPARTMENT" ? byDept
