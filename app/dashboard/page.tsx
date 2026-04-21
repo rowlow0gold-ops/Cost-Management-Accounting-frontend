@@ -253,29 +253,37 @@ export default function Dashboard() {
           ) : byProj.length === 0 ? (
             <EmptyState title="프로젝트 데이터가 없습니다"
                         hint="해당 기간에 승인된 공수가 없습니다." />
-          ) : (
-          <ResponsiveContainer width="100%" height={380}>
-            <PieChart>
-              <Pie
-                data={[...byProj].sort((a, b) => Number(b.directCost) - Number(a.directCost))}
-                dataKey="directCost" nameKey="keyCode"
-                outerRadius={110} innerRadius={50}
-                paddingAngle={1}
-              >
-                {byProj.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip formatter={(v: any, _n: any, p: any) =>
-                [`${fmt(Number(v))} KRW`, p?.payload?.keyName || p?.payload?.keyCode]} />
-              <Legend verticalAlign="bottom" height={80}
-                wrapperStyle={{ maxHeight: 100, overflowY: "auto", fontSize: 11 }}
-                formatter={(value: any) => {
-                  const proj = byProj.find((p: any) => p.keyCode === value);
-                  const full = proj ? `${proj.keyCode} · ${proj.keyName}` : value;
-                  return <span title={full} style={{ fontSize: 11, cursor: "help" }}>{value}</span>;
-                }} />
-            </PieChart>
-          </ResponsiveContainer>
-          )}
+          ) : (() => {
+            const sorted = [...byProj].sort((a, b) => Number(b.directCost) - Number(a.directCost));
+            const top10 = sorted.slice(0, 10);
+            const others = sorted.slice(10);
+            const pieData = others.length > 0
+              ? [...top10, { keyCode: "기타", keyName: `기타 (${others.length}건)`, directCost: others.reduce((s, r) => s + Number(r.directCost ?? 0), 0) }]
+              : top10;
+            return (
+            <ResponsiveContainer width="100%" height={380}>
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  dataKey="directCost" nameKey="keyCode"
+                  outerRadius={110} innerRadius={50}
+                  paddingAngle={1}
+                >
+                  {pieData.map((_, i) => <Cell key={i} fill={i < COLORS.length ? COLORS[i] : "#94a3b8"} />)}
+                </Pie>
+                <Tooltip formatter={(v: any, _n: any, p: any) =>
+                  [`${fmt(Number(v))} KRW`, p?.payload?.keyName || p?.payload?.keyCode]} />
+                <Legend verticalAlign="bottom" height={60}
+                  wrapperStyle={{ maxHeight: 80, overflowY: "auto", fontSize: 11 }}
+                  formatter={(value: any) => {
+                    const proj = pieData.find((p: any) => p.keyCode === value);
+                    const full = proj ? `${proj.keyCode} · ${proj.keyName}` : value;
+                    return <span title={full} style={{ fontSize: 11, cursor: "help" }}>{value}</span>;
+                  }} />
+              </PieChart>
+            </ResponsiveContainer>
+            );
+          })()}
           </div>
         </Panel>
 
