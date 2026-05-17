@@ -9,7 +9,7 @@ import { toast } from "@/components/Toast";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@noaats.com");
+  const [email, setEmail] = useState("admin@demo.com");
   const [password, setPassword] = useState("password123");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -55,9 +55,9 @@ export default function LoginPage() {
 
         <div className="mt-6 text-xs text-slate-500 border-t pt-4">
           <div className="font-medium text-slate-600 mb-1">테스트 계정 (비밀번호: password123)</div>
-          <div>admin@noaats.com — 전체 권한</div>
-          <div>manager@noaats.com — 승인/배분/대체</div>
-          <div>user@noaats.com — 공수 입력</div>
+          <div>admin@demo.com — 전체 권한</div>
+          <div>manager@demo.com — 승인/배분/대체</div>
+          <div>user@demo.com — 공수 입력</div>
         </div>
       </div>
     </div>

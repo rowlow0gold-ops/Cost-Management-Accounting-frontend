@@ -19,9 +19,9 @@ NEXT_PUBLIC_API_BASE=https://your-backend.example.com npm run dev
 
 Password for all: `password123`
 
-- `admin@noaats.com` — 전체 권한 (마스터 CRUD, 감사로그)
-- `manager@noaats.com` — 공수 승인, 원가배분, 내부대체
-- `user@noaats.com` — 공수 입력만
+- `admin@demo.com` — 전체 권한 (마스터 CRUD, 감사로그)
+- `manager@demo.com` — 공수 승인, 원가배분, 내부대체
+- `user@demo.com` — 공수 입력만
 
 ## Pages
 
